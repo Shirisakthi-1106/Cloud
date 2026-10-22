@@ -1,0 +1,65 @@
+import Pyro4
+import threading
+
+
+@Pyro4.expose
+class Bank:
+    def __init__(self):
+        self.balance = 0.0
+        self.lock = threading.Lock()
+
+    def deposit(self, amount):
+        if amount <= 0:
+            return "Amount must be positive"
+
+        with self.lock:
+            self.balance += amount
+            return f"Deposited {amount:.2f}. Balance: {self.balance:.2f}"
+
+    def withdraw(self, amount):
+        if amount <= 0:
+            return "Amount must be positive"
+
+        with self.lock:
+            if amount > self.balance:
+                return "Insufficient balance"
+            self.balance -= amount
+            return f"Withdrawn {amount:.2f}. Balance: {self.balance:.2f}"
+
+    def get_balance(self):
+        with self.lock:
+            return self.balance
+
+
+daemon = Pyro4.Daemon()
+uri = daemon.register(Bank)
+ns = Pyro4.locateNS()
+ns.register("cloud.bank", uri)
+print("Bank RMI server running...")
+daemon.requestLoop()
+
+
+
+import Pyro4
+
+bank = Pyro4.Proxy("PYRONAME:cloud.bank")
+
+try:
+    while True:
+        print("\n1.Deposit  2.Withdraw  3.Balance  4.Exit")
+        choice = input("Choice: ")
+
+        if choice == "1":
+            amount = float(input("Deposit amount: "))
+            print(bank.deposit(amount))
+        elif choice == "2":
+            amount = float(input("Withdrawal amount: "))
+            print(bank.withdraw(amount))
+        elif choice == "3":
+            print("Balance:", bank.get_balance())
+        elif choice == "4":
+            break
+        else:
+            print("Invalid choice")
+finally:
+    bank._pyroRelease()
