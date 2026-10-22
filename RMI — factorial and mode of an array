@@ -1,0 +1,77 @@
+import Pyro4
+from collections import Counter
+
+
+@Pyro4.expose
+class CloudLabFunctions:
+
+    def factorial(self, n):
+        if not isinstance(n, int) or isinstance(n, bool):
+            raise TypeError("Enter an integer")
+
+        if n < 0:
+            raise ValueError("Number must be non-negative")
+
+        result = 1
+        for i in range(1, n + 1):
+            result *= i
+
+        return result
+
+    def mode(self, arr):
+        if not isinstance(arr, list) or len(arr) == 0:
+            raise ValueError("Array must be a non-empty list")
+
+        frequency = Counter(arr)
+        highest = max(frequency.values())
+
+        for item in arr:
+            if frequency[item] == highest:
+                return item
+
+
+def main():
+    daemon = Pyro4.Daemon()
+    uri = daemon.register(CloudLabFunctions)
+
+    nameserver = Pyro4.locateNS()
+    nameserver.register("cloudlab.functions", uri)
+
+    print("RMI Server is running...")
+    print("Registered object: cloudlab.functions")
+
+    daemon.requestLoop()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+import Pyro4
+
+
+def main():
+    functions = Pyro4.Proxy("PYRONAME:cloudlab.functions")
+
+    try:
+        n = int(input("Enter number for factorial: "))
+        print("Factorial =", functions.factorial(n))
+
+        arr = list(map(
+            int,
+            input("Enter array elements separated by spaces: ").split()
+        ))
+
+        print("Array:", arr)
+        print("Mode =", functions.mode(arr))
+
+    except (ValueError, TypeError) as e:
+        print("Error:", e)
+
+    finally:
+        functions._pyroRelease()
+
+
+if __name__ == "__main__":
+    main()
