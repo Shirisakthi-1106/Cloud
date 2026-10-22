@@ -1,0 +1,57 @@
+class VectorClock:
+    def __init__(self, process_id, total_processes):
+        self.process_id = process_id
+        self.clock = [0] * total_processes
+
+    def local_event(self, description):
+        self.clock[self.process_id] += 1
+        print(
+            f"P{self.process_id + 1}: {description} "
+            f"| Vector clock = {self.clock}"
+        )
+
+    def send_message(self):
+        self.clock[self.process_id] += 1
+
+        message_clock = self.clock.copy()
+
+        print(
+            f"P{self.process_id + 1}: Sending message "
+            f"with vector {message_clock}"
+        )
+
+        return message_clock
+
+    def receive_message(self, received_clock):
+        # Merge the two vectors component by component.
+        for i in range(len(self.clock)):
+            self.clock[i] = max(
+                self.clock[i],
+                received_clock[i]
+            )
+
+        # Record the receive event.
+        self.clock[self.process_id] += 1
+
+        print(
+            f"P{self.process_id + 1}: Received message "
+            f"| Vector clock = {self.clock}"
+        )
+
+
+P1 = VectorClock(0, 3)
+P2 = VectorClock(1, 3)
+P3 = VectorClock(2, 3)
+
+P1.local_event("Local event A")
+message1 = P1.send_message()
+
+P2.local_event("Local event B")
+P2.receive_message(message1)
+
+message2 = P2.send_message()
+P3.receive_message(message2)
+
+P3.local_event("Local event C")
+message3 = P3.send_message()
+P1.receive_message(message3)
