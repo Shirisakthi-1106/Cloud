@@ -1,0 +1,152 @@
+import socket
+import threading
+
+HOST = "127.0.0.1"
+PORT = 5002
+
+waiting_queue = []
+queue_condition = threading.Condition()
+resource_busy = False
+
+
+def handle_client(conn, address):
+    global resource_busy
+
+    client_id = None
+
+    try:
+        with conn:
+            file = conn.makefile("rwb")
+
+            # First line identifies the client.
+            client_id = file.readline().decode().strip()
+
+            if not client_id:
+                return
+
+            print(f"{client_id} connected from {address}")
+
+            while True:
+                command = file.readline().decode().strip()
+
+                if not command:
+                    break
+
+                if command == "REQUEST":
+                    with queue_condition:
+                        waiting_queue.append((client_id, file))
+                        print(f"{client_id} requested access")
+
+                        while (
+                            resource_busy
+                            or not waiting_queue
+                            or waiting_queue[0][0] != client_id
+                        ):
+                            queue_condition.wait()
+
+                        waiting_queue.pop(0)
+                        resource_busy = True
+
+                        file.write(b"GRANTED\n")
+                        file.flush()
+
+                    # Client uses the resource and sends RELEASE.
+                    while True:
+                        release = file.readline().decode().strip()
+
+                        if not release:
+                            return
+
+                        if release == "RELEASE":
+                            break
+
+                    with queue_condition:
+                        resource_busy = False
+                        print(f"{client_id} released the resource")
+                        queue_condition.notify_all()
+
+                elif command == "QUIT":
+                    break
+
+    except (ConnectionError, OSError) as error:
+        print(f"Connection error for {client_id}: {error}")
+
+    finally:
+        print(f"{client_id or address} disconnected")
+
+
+def main():
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server:
+        server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        server.bind((HOST, PORT))
+        server.listen()
+
+        print(f"Coordinator running at {HOST}:{PORT}")
+
+        while True:
+            conn, address = server.accept()
+
+            threading.Thread(
+                target=handle_client,
+                args=(conn, address),
+                daemon=True
+            ).start()
+
+
+if __name__ == "__main__":
+    main()
+
+
+
+
+import socket
+import sys
+import time
+
+HOST = "127.0.0.1"
+PORT = 5002
+
+client_id = (
+    sys.argv[1] if len(sys.argv) > 1 else input("Client ID: ")
+)
+
+with socket.create_connection((HOST, PORT)) as client:
+    file = client.makefile("rwb")
+
+    file.write((client_id + "\n").encode())
+    file.flush()
+
+    try:
+        while True:
+            choice = input(
+                "\n1. Request critical section\n"
+                "2. Exit\n"
+                "Choice: "
+            )
+
+            if choice == "1":
+                file.write(b"REQUEST\n")
+                file.flush()
+
+                response = file.readline().decode().strip()
+
+                if response == "GRANTED":
+                    print(f"{client_id}: Access granted")
+                    print(f"{client_id}: Using shared resource...")
+                    time.sleep(2)
+
+                    file.write(b"RELEASE\n")
+                    file.flush()
+
+                    print(f"{client_id}: Released shared resource")
+
+            elif choice == "2":
+                file.write(b"QUIT\n")
+                file.flush()
+                break
+
+            else:
+                print("Invalid choice")
+
+    except (ConnectionError, OSError):
+        print("Coordinator connection lost")
