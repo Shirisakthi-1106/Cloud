@@ -1,0 +1,140 @@
+import threading
+import queue
+import time
+
+
+class Process:
+    def __init__(self, pid, total_processes):
+        self.pid = pid
+        self.total = total_processes
+
+        self.clock = 0
+        self.request_timestamp = None
+
+        self.replies_needed = set()
+        self.deferred_replies = set()
+
+        self.messages = queue.Queue()
+        self.lock = threading.Lock()
+        self.reply_condition = threading.Condition(self.lock)
+
+    def send_message(self, destination, message):
+        destination.messages.put(message)
+
+    def request_critical_section(self, processes):
+        with self.reply_condition:
+            self.clock += 1
+            self.request_timestamp = self.clock
+
+            self.replies_needed = {
+                p.pid for p in processes if p.pid != self.pid
+            }
+
+            print(
+                f"P{self.pid}: REQUEST critical section "
+                f"at timestamp {self.request_timestamp}"
+            )
+
+            for process in processes:
+                if process.pid != self.pid:
+                    self.send_message(
+                        process,
+                        ("REQUEST", self.pid, self.request_timestamp)
+                    )
+
+            while self.replies_needed:
+                self.reply_condition.wait()
+
+        print(f"P{self.pid}: ENTERING critical section")
+        time.sleep(1)
+        print(f"P{self.pid}: EXITING critical section")
+
+        self.release_critical_section(processes)
+
+    def release_critical_section(self, processes):
+        for pid in list(self.deferred_replies):
+            destination = processes[pid]
+
+            self.send_message(
+                destination,
+                ("REPLY", self.pid, None)
+            )
+
+        self.deferred_replies.clear()
+        self.request_timestamp = None
+
+    def handle_messages(self, processes, stop_event):
+        while not stop_event.is_set():
+            try:
+                message = self.messages.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            kind, sender, timestamp = message
+
+            if kind == "REQUEST":
+                with self.reply_condition:
+                    self.clock = max(self.clock, timestamp) + 1
+
+                    my_request = (
+                        self.request_timestamp is not None
+                    )
+
+                    # Defer reply if our request has priority.
+                    should_defer = my_request and (
+                        (self.request_timestamp, self.pid)
+                        < (timestamp, sender)
+                    )
+
+                    if should_defer:
+                        self.deferred_replies.add(sender)
+                        print(
+                            f"P{self.pid}: Deferring reply to P{sender}"
+                        )
+                    else:
+                        self.send_message(
+                            processes[sender],
+                            ("REPLY", self.pid, None)
+                        )
+
+            elif kind == "REPLY":
+                with self.reply_condition:
+                    self.replies_needed.discard(sender)
+                    self.reply_condition.notify_all()
+
+
+def main():
+    total = 3
+    processes = [
+        Process(pid, total) for pid in range(total)
+    ]
+
+    stop_event = threading.Event()
+
+    handlers = [
+        threading.Thread(
+            target=p.handle_messages,
+            args=(processes, stop_event),
+            daemon=True
+        )
+        for p in processes
+    ]
+
+    for handler in handlers:
+        handler.start()
+
+    # Requests are staggered to make the output easier to follow.
+    for p in processes:
+        threading.Thread(
+            target=p.request_critical_section,
+            args=(processes,),
+            daemon=True
+        ).start()
+        time.sleep(0.3)
+
+    time.sleep(5)
+    stop_event.set()
+
+
+if __name__ == "__main__":
+    main()
