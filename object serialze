@@ -1,0 +1,54 @@
+import socket
+import pickle
+
+HOST = "127.0.0.1"
+PORT = 5002
+
+server = socket.socket()
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind((HOST, PORT))
+server.listen()
+
+print("Serialization server waiting...")
+conn, addr = server.accept()
+print("Connected:", addr)
+
+try:
+    with conn:
+        data = conn.recv(65536)
+        obj = pickle.loads(data)
+        print("Received object:", obj)
+
+        response = {
+            "status": "success",
+            "type": type(obj).__name__,
+            "message": "Object deserialized successfully"
+        }
+        conn.sendall(pickle.dumps(response))
+finally:
+    server.close()
+
+
+
+
+import socket
+import pickle
+
+HOST = "127.0.0.1"
+PORT = 5002
+
+data_object = {
+    "student": "Student A",
+    "marks": [85, 91, 78],
+    "passed": True
+}
+
+sock = socket.socket()
+sock.connect((HOST, PORT))
+
+try:
+    sock.sendall(pickle.dumps(data_object))
+    response = pickle.loads(sock.recv(65536))
+    print("Server response:", response)
+finally:
+    sock.close()
