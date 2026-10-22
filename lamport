@@ -1,0 +1,49 @@
+class LamportClock:
+    def __init__(self, process_name):
+        self.process_name = process_name
+        self.clock = 0
+
+    def local_event(self, description):
+        self.clock += 1
+        print(
+            f"{self.process_name}: {description}, "
+            f"Lamport timestamp = {self.clock}"
+        )
+
+    def send_message(self):
+        self.clock += 1
+        timestamp = self.clock
+
+        print(
+            f"{self.process_name}: Sending message "
+            f"with timestamp {timestamp}"
+        )
+
+        return timestamp
+
+    def receive_message(self, received_timestamp):
+        self.clock = max(self.clock, received_timestamp) + 1
+
+        print(
+            f"{self.process_name}: Received message "
+            f"with timestamp {received_timestamp}, "
+            f"updated clock = {self.clock}"
+        )
+
+
+# Two processes
+P1 = LamportClock("Process P1")
+P2 = LamportClock("Process P2")
+
+P1.local_event("Event A")
+message_timestamp = P1.send_message()
+
+P2.local_event("Event B")
+P2.receive_message(message_timestamp)
+
+P2.local_event("Event C")
+
+reply_timestamp = P2.send_message()
+P1.receive_message(reply_timestamp)
+
+P1.local_event("Event D")
