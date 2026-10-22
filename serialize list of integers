@@ -1,0 +1,32 @@
+import socket
+import pickle
+
+HOST = "127.0.0.1"
+PORT = 5003
+
+server = socket.socket()
+server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+server.bind((HOST, PORT))
+server.listen()
+print("List server running...")
+
+while True:
+    conn, addr = server.accept()
+    with conn:
+        print("Client:", addr)
+        data = conn.recv(65536)
+
+        try:
+            numbers = pickle.loads(data)
+            if not isinstance(numbers, list) or not all(
+                isinstance(n, int) and not isinstance(n, bool)
+                for n in numbers
+            ):
+                raise ValueError("Expected a list of integers")
+
+            total = sum(numbers)
+            response = {"sum": total}
+        except Exception as error:
+            response = {"error": str(error)}
+
+        conn.sendall(pickle.dumps(response))
